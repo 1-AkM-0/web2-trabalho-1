@@ -1,7 +1,9 @@
 const express = require("express")
-
+const itensRoutes = require("./routes/itensRoutes")
 
 const app = express()
+
+app.use("/api/itens", itensRoutes)
 
 
 const startServer = () => {
