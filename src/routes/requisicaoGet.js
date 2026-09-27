@@ -1,8 +1,11 @@
-const express = require("express");
-const router = express.Router();
-const { logsRequisicoes } = require("../middlewares/acessoDiasUteis");
+const {Router} = require("express");
+const { logsRequisicoes } = require("../../data/requisicoes");
+const { horario } = require("../middlewares/rotaHorario");
+const { pathExtractor } = require("../middlewares/logs");
+const router = Router()
 
-router.get("/logs", (req, res) => {
+
+router.get("/", horario, pathExtractor, (req, res) => {
   const { data } = req.query;
 
   if (!data) {
