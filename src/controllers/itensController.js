@@ -7,8 +7,16 @@ class ItensController {
   }
     static inserirItem = async (req, res) => {
         const novoItem = req.body;
-        itens.push(novoItem); 
-        res.status(201).json({ mensagem: "Item inserido com sucesso!", item: novoItem });
+        if (!novoItem.id || !novoItem.nome) {
+            return res.status(400).json({
+                mensagem: "Erro de validação: O item precisa de ter um 'id' e um 'nome'."
+            });
+        }
+        itens.push(novoItem);
+        res.status(201).json({
+            mensagem: "Item inserido com sucesso!",
+            item: novoItem
+        });
     }
 
     static pesquisarPorCodigo = async (req, res) => {
