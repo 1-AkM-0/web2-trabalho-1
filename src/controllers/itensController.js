@@ -7,6 +7,11 @@ class ItensController {
   }
     static inserirItem = async (req, res) => {
         const novoItem = req.body;
+        if (!novoItem || Object.keys(novoItem).length === 0) {
+            return res.status(400).json({
+                mensagem: "Erro: Nenhum dado foi enviado na requisição."
+            });
+        }
         if (!novoItem.id || !novoItem.nome) {
             return res.status(400).json({
                 mensagem: "Erro de validação: O item precisa de ter um 'id' e um 'nome'."
@@ -18,7 +23,6 @@ class ItensController {
             item: novoItem
         });
     }
-
     static pesquisarPorCodigo = async (req, res) => {
         const idPesquisado = req.params.id; 
         const itemEncontrado = itens.find(item => item.id == idPesquisado);
@@ -27,7 +31,6 @@ class ItensController {
         }
         res.status(200).json(itemEncontrado);
     }
-
     static excluirItem = async (req, res) => {
         const idPesquisado = req.params.id; 
         const index = itens.findIndex(item => item.id == idPesquisado); 
