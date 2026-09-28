@@ -1,3 +1,7 @@
-const { startServer } = require("./app");
+const app = require("./app");
 
-startServer()
+if (require.main === module) {
+  app.startServer();
+}
+
+module.exports = app;
