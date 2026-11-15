@@ -1,29 +1,30 @@
-const { itens } = require("../../data/itens")
-const { PDFDocument } = require('pdfkit');
+const { PDFDocument } = require("pdfkit");
+const Item = require("../models/Item");
 
 class PdfController {
-  static pdfGet = async (req, res) => {
-    const doc = new PDFDocument()
+  static pdfGet = async (req, res, next) => {
+    try {
+      const itens = await Item.find();
+      const doc = new PDFDocument();
 
-    res.setHeader("Content-Type", "application/pdf")
-    res.setHeader("Content-Disposition", 'attachment; filename="lista.pdf"')
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", 'attachment; filename="lista.pdf"');
 
-    doc.pipe(res)
+      doc.pipe(res);
 
-    doc.fontSize(20).text("Relatório", { align: "center" })
-    doc.moveDown();
+      doc.fontSize(20).text("Relatório", { align: "center" });
+      doc.moveDown();
 
-    itens.forEach((item) => {
-      doc.fontSize(12).text(`${item.nome}`)
+      itens.forEach((item) => {
+        doc.fontSize(12).text(item.nome);
+        doc.moveDown();
+      });
 
-      doc.moveDown()
-
-    })
-
-    doc.end()
-
-  }
-
+      doc.end();
+    } catch (erro) {
+      next(erro);
+    }
+  };
 }
 
-module.exports = PdfController
+module.exports = PdfController;
