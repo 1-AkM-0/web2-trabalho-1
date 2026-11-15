@@ -49,6 +49,62 @@ Para popular o banco com os itens iniciais:
 npm run seed
 ```
 
+Para conferir a conexão e o conteúdo do banco em desenvolvimento:
+
+```bash
+npm run db:check
+```
+
+Esse comando mostra o host, o nome do banco, as coleções, a quantidade de
+documentos, os primeiros itens e os logs do dia. Ele é somente leitura, então
+pode ser executado à vontade.
+
+> Dica: para não misturar dados de desenvolvimento com os de produção, use um
+> banco separado no mesmo cluster, por exemplo `MONGODB_DB=web2-trabalho-1-dev`
+> no seu `.env` local. Na Vercel, mantenha `MONGODB_DB=web2-trabalho-1`.
+
+### Banco de desenvolvimento e trabalho em equipe
+
+O MongoDB cria o banco automaticamente no primeiro documento inserido. O banco
+`web2-trabalho-1-dev` já está criado no cluster com os 5 itens iniciais.
+
+Para usar o banco de dev localmente, adicione ao `.env`:
+
+```env
+MONGODB_DB=web2-trabalho-1-dev
+```
+
+Depois confira:
+
+```bash
+npm run seed      # só insere se o banco estiver vazio
+npm run db:check  # mostra o banco, coleções e documentos
+```
+
+**Para compartilhar com os integrantes (banco de dev comum):**
+
+1. No Atlas, vá em **Database Access → Add New Database User**.
+2. Crie um usuário só para dev, por exemplo `web2-dev`, com uma senha forte.
+3. Em permissões, escolha **Specific Privileges** e dê `readWrite` apenas no
+   banco `web2-trabalho-1-dev`.
+4. Em **Network Access**, libere `0.0.0.0/0` (aceitável no trabalho) ou os IPs
+   da equipe.
+5. Cada integrante cria seu próprio `.env` a partir do `.env.example`, usando a
+   mesma `MONGODB_URI` e `MONGODB_DB=web2-trabalho-1-dev`.
+6. Compartilhe a senha por gerenciador de senhas ou mensagem privada. Nunca
+   commite o `.env` nem coloque credenciais no README.
+
+Se preferir que cada um tenha um banco isolado, use nomes diferentes no mesmo
+cluster, como `web2-trabalho-1-dev-pedro` e `web2-trabalho-1-dev-maria`. O
+cluster e a URI continuam os mesmos; só o `MONGODB_DB` muda.
+
+**Na Vercel**, separe os ambientes:
+
+- **Production:** `MONGODB_DB=web2-trabalho-1`
+- **Preview:** `MONGODB_DB=web2-trabalho-1-dev`
+
+Assim, deploys de preview não mexem nos dados reais.
+
 ### Item B — Imagens no Cloudinary
 
 1. Crie uma conta gratuita em <https://cloudinary.com>.
