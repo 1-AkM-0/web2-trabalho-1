@@ -4,9 +4,9 @@ const path = require("node:path");
 const itensRoutes = require("./routes/itensRoutes");
 const pdfRoutes = require("./routes/pdfRoutes");
 const logsRoutes = require("./routes/requisicaoGet");
+const authRoutes = require("./routes/authRoutes");
 const { connectDB } = require("./config/db");
 
-// Lido no carregamento do módulo para o bundler da Vercel incluir o arquivo.
 const paginaExportar = fs.readFileSync(
   path.join(__dirname, "views", "exportar.html"),
   "utf8"
@@ -74,12 +74,12 @@ app.use("/api", garantirConexao);
 app.use("/api/itens", itensRoutes);
 app.use("/api/pdf", pdfRoutes);
 app.use("/api/logs", logsRoutes);
+app.use("/api/auth", authRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ mensagem: "Rota não encontrada." });
 });
 
-// eslint-disable-next-line no-unused-vars
 app.use((erro, req, res, next) => {
   if (process.env.NODE_ENV !== "test") {
     console.error(erro);
