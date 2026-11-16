@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("node:path");
 const itensRoutes = require("./routes/itensRoutes");
 const pdfRoutes = require("./routes/pdfRoutes");
 const logsRoutes = require("./routes/requisicaoGet");
@@ -7,7 +8,45 @@ const { connectDB } = require("./config/db");
 const app = express();
 
 app.disable("x-powered-by");
+
+app.use((req, res, next) => {
+  const origem = req.get("origin");
+
+  if (!origem) {
+    return next();
+  }
+
+  res.vary("Origin");
+
+  try {
+    const protocoloEncaminhado = req.get("x-forwarded-proto");
+    const protocolo = (protocoloEncaminhado || req.protocol).split(",")[0].trim();
+    const host = req.get("host");
+    const origemEsperada = new URL(`${protocolo}://${host}`).origin;
+
+    if (new URL(origem).origin !== origemEsperada) {
+      return res.status(403).json({ mensagem: "Origem não permitida." });
+    }
+  } catch {
+    return res.status(403).json({ mensagem: "Origem não permitida." });
+  }
+
+  res.setHeader("Access-Control-Allow-Origin", origem);
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
+  return next();
+});
+
 app.use(express.json());
+
+app.get("/exportar", (_, res) => {
+  res.sendFile(path.join(__dirname, "views", "exportar.html"));
+});
 
 // Garante a conexão com o MongoDB antes de qualquer rota /api. Em serverless a
 // conexão é reaproveitada pelo cache global em config/db.js.

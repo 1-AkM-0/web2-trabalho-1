@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exportar itens</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Arial, sans-serif;
+        color: #202124;
+        background: #f4f6f8;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+      }
+
+      main {
+        width: min(90vw, 420px);
+        padding: 32px;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 8px 28px rgb(0 0 0 / 10%);
+        text-align: center;
+      }
+
+      h1 { margin-top: 0; }
+      p { color: #5f6368; line-height: 1.5; }
+
+      button {
+        margin-top: 12px;
+        padding: 12px 24px;
+        border: 0;
+        border-radius: 6px;
+        color: #fff;
+        background: #1769aa;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button:hover { background: #0d4f86; }
+      button:focus-visible { outline: 3px solid #8ab4f8; outline-offset: 3px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Exportar dados</h1>
+      <p>Baixe os itens cadastrados no banco de dados em uma planilha CSV.</p>
+      <button id="exportar" type="button">Exportar</button>
+    </main>
+    <script>
+      document.getElementById("exportar").addEventListener("click", () => {
+        window.location.assign("/api/itens/exportar");
+      });
+    </script>
+  </body>
+</html>
