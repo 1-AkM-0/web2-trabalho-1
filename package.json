@@ -30,11 +30,13 @@
   },
   "homepage": "https://github.com/1-AkM-0/web2-trabalho-1#readme",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cloudinary": "^2.11.0",
     "dotenv": "^18.0.10",
     "express": "^5.2.1",
     "mongoose": "^9.12.1",
     "multer": "^2.5.0",
+    "nodemailer": "^10.6.0",
     "nodemon": "^3.1.14",
     "pdfkit": "^0.20.2"
   },
