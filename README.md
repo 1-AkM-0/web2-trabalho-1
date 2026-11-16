@@ -105,6 +105,49 @@ cluster e a URI continuam os mesmos; só o `MONGODB_DB` muda.
 
 Assim, deploys de preview não mexem nos dados reais.
 
+### Problemas de conexão com o Atlas
+
+**`querySrv ECONNREFUSED _mongodb._tcp...`**
+
+Esse erro é de DNS: o Node não conseguiu consultar o registro SRV do cluster.
+Não é senha nem permissão do Atlas. Causas comuns: VPN, proxy, antivírus, DNS da
+rede bloqueando consultas SRV ou cache de DNS inválido.
+
+Teste no computador:
+
+```bash
+# Linux/macOS
+dig +short SRV _mongodb._tcp.cluster0.zclf9g3.mongodb.net
+
+# Windows (PowerShell)
+nslookup -type=SRV _mongodb._tcp.cluster0.zclf9g3.mongodb.net
+```
+
+Se não retornar os três hosts do cluster, tente trocar o DNS para
+`1.1.1.1`/`8.8.8.8`, desligar VPN/proxy e limpar o cache:
+
+```bash
+# Windows
+ipconfig /flushdns
+
+# macOS
+sudo dscacheutil -flushcache
+```
+
+**Alternativa: string de conexão padrão (sem SRV)**
+
+Ela usa os hosts diretamente e não depende de consulta SRV:
+
+```env
+MONGODB_URI=mongodb://USUARIO:SENHA@ac-luhbk4e-shard-00-00.zclf9g3.mongodb.net:27017,ac-luhbk4e-shard-00-01.zclf9g3.mongodb.net:27017,ac-luhbk4e-shard-00-02.zclf9g3.mongodb.net:27017/web2-trabalho-1-dev?replicaSet=atlas-l8ocle-shard-0&authSource=admin&retryWrites=true&w=majority&tls=true
+```
+
+Se a senha tiver caracteres especiais (`@`, `:`, `/`, `?`, `#`, `%`), ela
+precisa ser codificada ou trocada por uma senha apenas alfanumérica.
+
+Se o erro mudar para timeout ou `MongooseServerSelectionError`, aí sim é o
+**Network Access** do Atlas: libere o IP do integrante ou `0.0.0.0/0`.
+
 ### Item B — Imagens no Cloudinary
 
 1. Crie uma conta gratuita em <https://cloudinary.com>.
@@ -146,9 +189,9 @@ npm test
 ```
 
 Os testes usam Jest + Supertest e cobrem todas as rotas: status da API, CRUD de
-itens, upload/remoção de imagem, geração de PDF, consulta de logs e rota 404. O
-Mongoose e o Cloudinary são mockados, então os testes não precisam de internet,
-de credenciais nem de um banco real.
+itens, upload/remoção de imagem, geração de PDF, exportação CSV, política de
+CORS, consulta de logs e rota 404. O Mongoose e o Cloudinary são mockados, então
+os testes não precisam de internet, de credenciais nem de um banco real.
 
 ## Rotas
 
