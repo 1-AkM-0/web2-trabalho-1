@@ -216,6 +216,9 @@ os testes não precisam de internet, de credenciais nem de um banco real.
 | DELETE | `/api/itens/:id/imagem` | Remove a imagem do item |
 | GET | `/api/pdf` | Baixa a lista de itens em PDF |
 | GET | `/api/logs?data=YYYY-MM-DD` | Lista os logs de requisição da data |
+| POST | `/api/auth/registrar` | Cadastra um usuário (não exige token) |
+| POST | `/api/auth/login` | Valida a senha e envia o código 2FA (não exige token) |
+| POST | `/api/auth/verificar-2fa` | Valida o código e devolve o token JWT (não exige token) |
 
 ### Autenticação (itens E e G)
 
@@ -229,8 +232,8 @@ sem `EMAIL_USER`/`EMAIL_PASS` ou se o envio falhar, responde `503`.
 
 `POST /api/auth/verificar-2fa` recebe `{ "email": "ana@example.com", "codigo": "123456" }`.
 Após validar o código, responde `200` com os dados públicos do usuário e um
-token Bearer válido por uma hora. O código é salvo como hash bcrypt e expira
-após cinco tentativas incorretas.
+token Bearer válido por uma hora. O código é salvo como hash bcrypt e é
+invalidado após cinco tentativas incorretas.
 
 Envie `Authorization: Bearer <token>` para acessar `/api/itens`, `/api/pdf` e
 `/api/logs`. Cadastro, login e verificação 2FA não exigem token.
