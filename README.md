@@ -27,6 +27,14 @@ cp .env.example .env
 | `CLOUDINARY_API_KEY` | API key do Cloudinary |
 | `CLOUDINARY_API_SECRET` | API secret do Cloudinary |
 | `CLOUDINARY_FOLDER` | Pasta onde as imagens serão salvas (opcional) |
+| `EMAIL_USER` | Conta Gmail usada para enviar os códigos 2FA |
+| `EMAIL_PASS` | Senha de app do Gmail (não use a senha normal da conta) |
+| `JWT_SECRET` | Chave secreta longa e aleatória para assinar tokens de sessão |
+
+Para usar o envio de email, ative a verificação em duas etapas da Conta Google e
+gere uma **senha de app** em Segurança. Informe essa senha em `EMAIL_PASS`. As
+variáveis `EMAIL_USER`, `EMAIL_PASS` e `JWT_SECRET` também devem ser cadastradas
+na Vercel em **Settings → Environment Variables** e o deploy deve ser feito novamente.
 
 ### Item A — MongoDB Atlas
 
@@ -208,6 +216,24 @@ os testes não precisam de internet, de credenciais nem de um banco real.
 | DELETE | `/api/itens/:id/imagem` | Remove a imagem do item |
 | GET | `/api/pdf` | Baixa a lista de itens em PDF |
 | GET | `/api/logs?data=YYYY-MM-DD` | Lista os logs de requisição da data |
+
+### Autenticação (itens E e G)
+
+`POST /api/auth/registrar` recebe `{ "nome": "Ana", "email": "ana@example.com", "senha": "Senha123" }`.
+A senha deve ter pelo menos 8 caracteres, uma letra e um número; ela é
+armazenada com bcrypt. Resposta `201`: `{ "mensagem": "...", "usuario": { "id", "nome", "email" } }`.
+
+`POST /api/auth/login` recebe `{ "email": "ana@example.com", "senha": "Senha123" }`.
+Com email configurado, envia um código de seis dígitos válido por dez minutos;
+sem `EMAIL_USER`/`EMAIL_PASS` ou se o envio falhar, responde `503`.
+
+`POST /api/auth/verificar-2fa` recebe `{ "email": "ana@example.com", "codigo": "123456" }`.
+Após validar o código, responde `200` com os dados públicos do usuário e um
+token Bearer válido por uma hora. O código é salvo como hash bcrypt e expira
+após cinco tentativas incorretas.
+
+Envie `Authorization: Bearer <token>` para acessar `/api/itens`, `/api/pdf` e
+`/api/logs`. Cadastro, login e verificação 2FA não exigem token.
 
 ### Itens F e H — CORS e exportação CSV
 
