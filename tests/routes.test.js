@@ -358,6 +358,147 @@ describe("API web2-trabalho-1", () => {
     });
   });
 
+  describe("Página de exportação", () => {
+    test("GET /exportar entrega o HTML com o botão Exportar", async () => {
+      const resposta = await request(app).get("/exportar");
+
+      expect(resposta.status).toBe(200);
+      expect(resposta.headers["content-type"]).toContain("text/html");
+      expect(resposta.text).toContain("Exportar dados");
+      expect(resposta.text).toContain('id="exportar"');
+    });
+  });
+
+  describe("Exportação CSV", () => {
+    test("GET /api/itens/exportar baixa o CSV com cabeçalho e dados", async () => {
+      Item.find.mockResolvedValue([
+        {
+          id: "id-1",
+          nome: "pão carioca",
+          imagemUrl: null,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+        },
+        {
+          id: "id-2",
+          nome: "coxinha",
+          imagemUrl: "https://exemplo.com/coxinha.png",
+          createdAt: new Date("2026-01-03T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-04T00:00:00.000Z"),
+        },
+      ]);
+
+      const resposta = await request(app).get("/api/itens/exportar");
+
+      expect(resposta.status).toBe(200);
+      expect(resposta.headers["content-type"]).toContain("text/csv");
+      expect(resposta.headers["content-disposition"]).toContain('filename="itens.csv"');
+
+      const csv = resposta.text.replace(/^\uFEFF/, "");
+      const linhas = csv.split("\r\n");
+
+      expect(linhas[0]).toBe('"id","nome","imagemUrl","criadoEm","atualizadoEm"');
+      expect(linhas[1]).toBe(
+        '"id-1","pão carioca","","2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z"'
+      );
+      expect(linhas[2]).toBe(
+        '"id-2","coxinha","https://exemplo.com/coxinha.png","2026-01-03T00:00:00.000Z","2026-01-04T00:00:00.000Z"'
+      );
+    });
+
+    test("escapa aspas e neutraliza fórmulas no CSV", async () => {
+      Item.find.mockResolvedValue([
+        {
+          id: "id-1",
+          nome: '=1+1; "aspas"',
+          imagemUrl: null,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ]);
+
+      const resposta = await request(app).get("/api/itens/exportar");
+      const csv = resposta.text.replace(/^\uFEFF/, "");
+
+      expect(csv).toContain(`"'=1+1; ""aspas"""`);
+    });
+
+    test("usa o _id quando o documento não tiver o virtual id", async () => {
+      Item.find.mockResolvedValue([
+        {
+          _id: { toString: () => "id-do-mongo" },
+          nome: "bolo mole",
+          imagemUrl: null,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ]);
+
+      const resposta = await request(app).get("/api/itens/exportar");
+      const csv = resposta.text.replace(/^\uFEFF/, "");
+
+      expect(csv).toContain('"id-do-mongo","bolo mole"');
+    });
+  });
+
+  describe("CORS", () => {
+    test("permite a mesma origem", async () => {
+      const resposta = await request(app)
+        .get("/api/itens")
+        .set("Host", "exemplo.vercel.app")
+        .set("X-Forwarded-Proto", "https")
+        .set("Origin", "https://exemplo.vercel.app");
+
+      expect(resposta.status).toBe(200);
+      expect(resposta.headers["access-control-allow-origin"]).toBe("https://exemplo.vercel.app");
+      expect(resposta.headers["access-control-allow-methods"]).toContain("GET");
+      expect(resposta.headers["access-control-allow-headers"]).toContain("Content-Type");
+      expect(resposta.headers.vary).toContain("Origin");
+    });
+
+    test("bloqueia origem diferente", async () => {
+      const resposta = await request(app)
+        .get("/api/itens")
+        .set("Host", "exemplo.vercel.app")
+        .set("X-Forwarded-Proto", "https")
+        .set("Origin", "https://outro.vercel.app");
+
+      expect(resposta.status).toBe(403);
+      expect(resposta.body.mensagem).toBe("Origem não permitida.");
+      expect(resposta.headers["access-control-allow-origin"]).toBeUndefined();
+    });
+
+    test("responde ao preflight OPTIONS da mesma origem", async () => {
+      const resposta = await request(app)
+        .options("/api/itens")
+        .set("Host", "exemplo.vercel.app")
+        .set("X-Forwarded-Proto", "https")
+        .set("Origin", "https://exemplo.vercel.app")
+        .set("Access-Control-Request-Method", "GET");
+
+      expect(resposta.status).toBe(204);
+      expect(resposta.headers["access-control-allow-origin"]).toBe("https://exemplo.vercel.app");
+      expect(resposta.headers["access-control-allow-methods"]).toContain("OPTIONS");
+    });
+
+    test("permite chamadas sem o cabeçalho Origin", async () => {
+      const resposta = await request(app).get("/api/itens");
+
+      expect(resposta.status).toBe(200);
+      expect(resposta.headers["access-control-allow-origin"]).toBeUndefined();
+    });
+
+    test("bloqueia origem inválida ou opaca", async () => {
+      const resposta = await request(app)
+        .get("/api/itens")
+        .set("Host", "localhost:3000")
+        .set("Origin", "null");
+
+      expect(resposta.status).toBe(403);
+      expect(resposta.body.mensagem).toBe("Origem não permitida.");
+    });
+  });
+
   describe("Rota inexistente", () => {
     test("retorna 404 em JSON", async () => {
       const resposta = await request(app).get("/api/nao-existe");

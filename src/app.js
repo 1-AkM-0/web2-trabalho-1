@@ -1,9 +1,16 @@
 const express = require("express");
+const fs = require("node:fs");
 const path = require("node:path");
 const itensRoutes = require("./routes/itensRoutes");
 const pdfRoutes = require("./routes/pdfRoutes");
 const logsRoutes = require("./routes/requisicaoGet");
 const { connectDB } = require("./config/db");
+
+// Lido no carregamento do módulo para o bundler da Vercel incluir o arquivo.
+const paginaExportar = fs.readFileSync(
+  path.join(__dirname, "views", "exportar.html"),
+  "utf8"
+);
 
 const app = express();
 
@@ -45,7 +52,7 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 app.get("/exportar", (_, res) => {
-  res.sendFile(path.join(__dirname, "views", "exportar.html"));
+  res.type("html").send(paginaExportar);
 });
 
 // Garante a conexão com o MongoDB antes de qualquer rota /api. Em serverless a

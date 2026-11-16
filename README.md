@@ -189,9 +189,9 @@ npm test
 ```
 
 Os testes usam Jest + Supertest e cobrem todas as rotas: status da API, CRUD de
-itens, upload/remoção de imagem, geração de PDF, consulta de logs e rota 404. O
-Mongoose e o Cloudinary são mockados, então os testes não precisam de internet,
-de credenciais nem de um banco real.
+itens, upload/remoção de imagem, geração de PDF, exportação CSV, política de
+CORS, consulta de logs e rota 404. O Mongoose e o Cloudinary são mockados, então
+os testes não precisam de internet, de credenciais nem de um banco real.
 
 ## Rotas
 
