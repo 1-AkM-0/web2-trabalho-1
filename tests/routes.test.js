@@ -1,3 +1,5 @@
+process.env.JWT_SECRET = "segredo-de-teste-super-seguro-123456";
+
 jest.mock("../src/config/db", () => ({
   connectDB: jest.fn().mockResolvedValue({}),
 }));
@@ -18,19 +20,39 @@ jest.mock("../src/models/Log", () => ({
   create: jest.fn(),
 }));
 
+jest.mock("../src/models/Usuario", () => ({
+  findOne: jest.fn(),
+  create: jest.fn(),
+}));
+
+const mockSendMail = jest.fn().mockResolvedValue({});
+jest.mock("nodemailer", () => ({
+  createTransport: jest.fn(() => ({
+    sendMail: mockSendMail,
+  })),
+}));
+
+const bcrypt = require("bcryptjs");
 const request = require("supertest");
 const app = require("../src/app");
 const Item = require("../src/models/Item");
 const Log = require("../src/models/Log");
+const Usuario = require("../src/models/Usuario");
+const { gerarToken } = require("../src/utils/authToken");
 const { enviarImagem, excluirImagem } = require("../src/config/cloudinary");
 const { connectDB } = require("../src/config/db");
 
 const ID_VALIDO = "507f1f77bcf86cd799439011";
 const ID_INVALIDO = "id-invalido";
+const AUTH_HEADER = `Bearer ${gerarToken(ID_VALIDO)}`;
 
 describe("API web2-trabalho-1", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    process.env.JWT_SECRET = "segredo-de-teste-super-seguro-123456";
+    process.env.EMAIL_USER = "teste@gmail.com";
+    process.env.EMAIL_PASS = "senha-app-teste";
 
     connectDB.mockResolvedValue({});
     Item.find.mockResolvedValue([]);
@@ -38,6 +60,14 @@ describe("API web2-trabalho-1", () => {
     Item.findById.mockResolvedValue(null);
     Log.find.mockResolvedValue([]);
     Log.create.mockResolvedValue({});
+    Usuario.findOne.mockResolvedValue(null);
+    Usuario.create.mockResolvedValue({
+      _id: ID_VALIDO,
+      nome: "Ana",
+      email: "ana@example.com",
+    });
+    mockSendMail.mockResolvedValue({});
+
     enviarImagem.mockResolvedValue({
       url: "https://res.cloudinary.com/demo/image/upload/coxinha.png",
       publicId: "web2-trabalho-1/coxinha",
@@ -58,11 +88,109 @@ describe("API web2-trabalho-1", () => {
     });
   });
 
+  describe("Autenticação e 2FA (/api/auth)", () => {
+    test("POST /api/auth/registrar cadastra um novo usuário", async () => {
+      const resposta = await request(app)
+        .post("/api/auth/registrar")
+        .send({ nome: "Ana", email: "ana@example.com", senha: "Senha123" });
+
+      expect(resposta.status).toBe(201);
+      expect(resposta.body.usuario).toEqual({
+        id: ID_VALIDO,
+        nome: "Ana",
+        email: "ana@example.com",
+      });
+      expect(Usuario.create).toHaveBeenCalledWith({
+        nome: "Ana",
+        email: "ana@example.com",
+        senha: "Senha123",
+      });
+    });
+
+    test("POST /api/auth/registrar rejeita senha fraca", async () => {
+      const resposta = await request(app)
+        .post("/api/auth/registrar")
+        .send({ nome: "Ana", email: "ana@example.com", senha: "123" });
+
+      expect(resposta.status).toBe(400);
+      expect(Usuario.create).not.toHaveBeenCalled();
+    });
+
+    test("POST /api/auth/login valida credenciais e envia código 2FA por email", async () => {
+      const senhaHash = await bcrypt.hash("Senha123", 4);
+      const usuarioMock = {
+        _id: ID_VALIDO,
+        email: "ana@example.com",
+        senha: senhaHash,
+        codigo2FA: null,
+        expiracaoCodigo2FA: null,
+        tentativasCodigo2FA: 0,
+        save: jest.fn().mockResolvedValue(),
+      };
+      Usuario.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue(usuarioMock),
+      });
+
+      const resposta = await request(app)
+        .post("/api/auth/login")
+        .send({ email: "ana@example.com", senha: "Senha123" });
+
+      expect(resposta.status).toBe(200);
+      expect(resposta.body.mensagem).toContain("Código de verificação enviado");
+      expect(usuarioMock.codigo2FA).toBeTruthy();
+      expect(usuarioMock.save).toHaveBeenCalledTimes(1);
+      expect(mockSendMail).toHaveBeenCalledTimes(1);
+    });
+
+    test("POST /api/auth/login retorna 503 sem EMAIL_USER ou EMAIL_PASS", async () => {
+      delete process.env.EMAIL_USER;
+      const resposta = await request(app)
+        .post("/api/auth/login")
+        .send({ email: "ana@example.com", senha: "Senha123" });
+
+      expect(resposta.status).toBe(503);
+    });
+
+    test("POST /api/auth/verificar-2fa valida o código e devolve token JWT", async () => {
+      const codigoHash = await bcrypt.hash("123456", 4);
+      const usuarioMock = {
+        _id: ID_VALIDO,
+        nome: "Ana",
+        email: "ana@example.com",
+        codigo2FA: codigoHash,
+        expiracaoCodigo2FA: new Date(Date.now() + 5 * 60 * 1000),
+        tentativasCodigo2FA: 0,
+        save: jest.fn().mockResolvedValue(),
+      };
+      Usuario.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue(usuarioMock),
+      });
+
+      const resposta = await request(app)
+        .post("/api/auth/verificar-2fa")
+        .send({ email: "ana@example.com", codigo: "123456" });
+
+      expect(resposta.status).toBe(200);
+      expect(resposta.body.token).toBeTruthy();
+      expect(usuarioMock.codigo2FA).toBeNull();
+      expect(usuarioMock.save).toHaveBeenCalledTimes(1);
+    });
+
+    test("rotas protegidas retornam 401 sem token Bearer", async () => {
+      const resposta = await request(app).get("/api/itens");
+
+      expect(resposta.status).toBe(401);
+      expect(resposta.body.mensagem).toBe("Autenticação necessária.");
+    });
+  });
+
   describe("Rotas de itens", () => {
     test("GET /api/itens lista os itens do MongoDB", async () => {
       Item.find.mockResolvedValue([{ id: "1", nome: "pão carioca" }]);
 
-      const resposta = await request(app).get("/api/itens");
+      const resposta = await request(app)
+        .get("/api/itens")
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(200);
       expect(resposta.body).toEqual({ itens: [{ id: "1", nome: "pão carioca" }] });
@@ -72,6 +200,7 @@ describe("API web2-trabalho-1", () => {
     test("POST /api/itens cria um item", async () => {
       const resposta = await request(app)
         .post("/api/itens")
+        .set("Authorization", AUTH_HEADER)
         .send({ nome: "coxinha" });
 
       expect(resposta.status).toBe(201);
@@ -81,13 +210,19 @@ describe("API web2-trabalho-1", () => {
     });
 
     test("POST /api/itens remove espaços do nome", async () => {
-      await request(app).post("/api/itens").send({ nome: "  bolo mole  " });
+      await request(app)
+        .post("/api/itens")
+        .set("Authorization", AUTH_HEADER)
+        .send({ nome: "  bolo mole  " });
 
       expect(Item.create).toHaveBeenCalledWith({ nome: "bolo mole" });
     });
 
     test("POST /api/itens rejeita corpo vazio", async () => {
-      const resposta = await request(app).post("/api/itens").send({});
+      const resposta = await request(app)
+        .post("/api/itens")
+        .set("Authorization", AUTH_HEADER)
+        .send({});
 
       expect(resposta.status).toBe(400);
       expect(resposta.body.mensagem).toContain("Nenhum dado");
@@ -95,7 +230,10 @@ describe("API web2-trabalho-1", () => {
     });
 
     test("POST /api/itens exige o campo nome", async () => {
-      const resposta = await request(app).post("/api/itens").send({ outro: "valor" });
+      const resposta = await request(app)
+        .post("/api/itens")
+        .set("Authorization", AUTH_HEADER)
+        .send({ outro: "valor" });
 
       expect(resposta.status).toBe(400);
       expect(resposta.body.mensagem).toContain("precisa de ter um 'nome'");
@@ -103,7 +241,10 @@ describe("API web2-trabalho-1", () => {
     });
 
     test("POST /api/itens rejeita nome em branco", async () => {
-      const resposta = await request(app).post("/api/itens").send({ nome: "   " });
+      const resposta = await request(app)
+        .post("/api/itens")
+        .set("Authorization", AUTH_HEADER)
+        .send({ nome: "   " });
 
       expect(resposta.status).toBe(400);
       expect(Item.create).not.toHaveBeenCalled();
@@ -112,6 +253,7 @@ describe("API web2-trabalho-1", () => {
     test("POST /api/itens retorna 400 para JSON inválido", async () => {
       const resposta = await request(app)
         .post("/api/itens")
+        .set("Authorization", AUTH_HEADER)
         .set("Content-Type", "application/json")
         .send('{"nome":');
 
@@ -122,7 +264,9 @@ describe("API web2-trabalho-1", () => {
       const item = { id: ID_VALIDO, nome: "bolo de cenoura" };
       Item.findById.mockResolvedValue(item);
 
-      const resposta = await request(app).get(`/api/itens/${ID_VALIDO}`);
+      const resposta = await request(app)
+        .get(`/api/itens/${ID_VALIDO}`)
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(200);
       expect(resposta.body).toEqual(item);
@@ -130,14 +274,18 @@ describe("API web2-trabalho-1", () => {
     });
 
     test("GET /api/itens/:id retorna 404 quando não existe", async () => {
-      const resposta = await request(app).get(`/api/itens/${ID_VALIDO}`);
+      const resposta = await request(app)
+        .get(`/api/itens/${ID_VALIDO}`)
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(404);
       expect(resposta.body.mensagem).toBe("Item não encontrado.");
     });
 
     test("GET /api/itens/:id retorna 400 para ID inválido", async () => {
-      const resposta = await request(app).get(`/api/itens/${ID_INVALIDO}`);
+      const resposta = await request(app)
+        .get(`/api/itens/${ID_INVALIDO}`)
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(400);
       expect(Item.findById).not.toHaveBeenCalled();
@@ -152,7 +300,9 @@ describe("API web2-trabalho-1", () => {
       };
       Item.findById.mockResolvedValue(item);
 
-      const resposta = await request(app).delete(`/api/itens/${ID_VALIDO}`);
+      const resposta = await request(app)
+        .delete(`/api/itens/${ID_VALIDO}`)
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(200);
       expect(excluirImagem).toHaveBeenCalledWith("web2-trabalho-1/coxinha");
@@ -168,21 +318,27 @@ describe("API web2-trabalho-1", () => {
       };
       Item.findById.mockResolvedValue(item);
 
-      const resposta = await request(app).delete(`/api/itens/${ID_VALIDO}`);
+      const resposta = await request(app)
+        .delete(`/api/itens/${ID_VALIDO}`)
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(200);
       expect(excluirImagem).not.toHaveBeenCalled();
     });
 
     test("DELETE /api/itens/:id retorna 404 quando não existe", async () => {
-      const resposta = await request(app).delete(`/api/itens/${ID_VALIDO}`);
+      const resposta = await request(app)
+        .delete(`/api/itens/${ID_VALIDO}`)
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(404);
       expect(resposta.body.mensagem).toContain("não encontrado");
     });
 
     test("DELETE /api/itens/:id retorna 400 para ID inválido", async () => {
-      const resposta = await request(app).delete(`/api/itens/${ID_INVALIDO}`);
+      const resposta = await request(app)
+        .delete(`/api/itens/${ID_INVALIDO}`)
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(400);
       expect(Item.findById).not.toHaveBeenCalled();
@@ -202,6 +358,7 @@ describe("API web2-trabalho-1", () => {
 
       const resposta = await request(app)
         .post(`/api/itens/${ID_VALIDO}/imagem`)
+        .set("Authorization", AUTH_HEADER)
         .attach("imagem", Buffer.from("conteudo-da-imagem"), {
           filename: "coxinha.png",
           contentType: "image/png",
@@ -226,6 +383,7 @@ describe("API web2-trabalho-1", () => {
 
       await request(app)
         .post(`/api/itens/${ID_VALIDO}/imagem`)
+        .set("Authorization", AUTH_HEADER)
         .attach("imagem", Buffer.from("nova-imagem"), {
           filename: "nova.png",
           contentType: "image/png",
@@ -235,7 +393,9 @@ describe("API web2-trabalho-1", () => {
     });
 
     test("POST /api/itens/:id/imagem exige um arquivo", async () => {
-      const resposta = await request(app).post(`/api/itens/${ID_VALIDO}/imagem`);
+      const resposta = await request(app)
+        .post(`/api/itens/${ID_VALIDO}/imagem`)
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(400);
       expect(resposta.body.mensagem).toContain("campo 'imagem'");
@@ -245,6 +405,7 @@ describe("API web2-trabalho-1", () => {
     test("POST /api/itens/:id/imagem rejeita arquivo que não é imagem", async () => {
       const resposta = await request(app)
         .post(`/api/itens/${ID_VALIDO}/imagem`)
+        .set("Authorization", AUTH_HEADER)
         .attach("imagem", Buffer.from("texto"), {
           filename: "arquivo.txt",
           contentType: "text/plain",
@@ -257,6 +418,7 @@ describe("API web2-trabalho-1", () => {
     test("POST /api/itens/:id/imagem retorna 404 quando o item não existe", async () => {
       const resposta = await request(app)
         .post(`/api/itens/${ID_VALIDO}/imagem`)
+        .set("Authorization", AUTH_HEADER)
         .attach("imagem", Buffer.from("imagem"), {
           filename: "foto.png",
           contentType: "image/png",
@@ -269,6 +431,7 @@ describe("API web2-trabalho-1", () => {
     test("POST /api/itens/:id/imagem retorna 400 para ID inválido", async () => {
       const resposta = await request(app)
         .post(`/api/itens/${ID_INVALIDO}/imagem`)
+        .set("Authorization", AUTH_HEADER)
         .attach("imagem", Buffer.from("imagem"), {
           filename: "foto.png",
           contentType: "image/png",
@@ -286,7 +449,9 @@ describe("API web2-trabalho-1", () => {
       };
       Item.findById.mockResolvedValue(item);
 
-      const resposta = await request(app).delete(`/api/itens/${ID_VALIDO}/imagem`);
+      const resposta = await request(app)
+        .delete(`/api/itens/${ID_VALIDO}/imagem`)
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(200);
       expect(excluirImagem).toHaveBeenCalledWith("web2-trabalho-1/imagem");
@@ -302,7 +467,9 @@ describe("API web2-trabalho-1", () => {
         imagemPublicId: null,
       });
 
-      const resposta = await request(app).delete(`/api/itens/${ID_VALIDO}/imagem`);
+      const resposta = await request(app)
+        .delete(`/api/itens/${ID_VALIDO}/imagem`)
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(404);
       expect(excluirImagem).not.toHaveBeenCalled();
@@ -313,7 +480,9 @@ describe("API web2-trabalho-1", () => {
     test("GET /api/pdf gera o PDF com os itens", async () => {
       Item.find.mockResolvedValue([{ nome: "pão carioca" }, { nome: "coxinha" }]);
 
-      const resposta = await request(app).get("/api/pdf");
+      const resposta = await request(app)
+        .get("/api/pdf")
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(200);
       expect(resposta.headers["content-type"]).toContain("application/pdf");
@@ -324,7 +493,9 @@ describe("API web2-trabalho-1", () => {
 
   describe("Rotas de logs", () => {
     test("GET /api/logs exige o parâmetro data", async () => {
-      const resposta = await request(app).get("/api/logs");
+      const resposta = await request(app)
+        .get("/api/logs")
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(400);
       expect(resposta.body.erro).toContain("Informe a data");
@@ -337,7 +508,9 @@ describe("API web2-trabalho-1", () => {
       ];
       Log.find.mockResolvedValue(logs);
 
-      const resposta = await request(app).get("/api/logs?data=2026-11-15");
+      const resposta = await request(app)
+        .get("/api/logs?data=2026-11-15")
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(200);
       expect(resposta.body).toEqual({
@@ -349,7 +522,9 @@ describe("API web2-trabalho-1", () => {
     });
 
     test("as rotas registram o log no MongoDB", async () => {
-      await request(app).get("/api/itens");
+      await request(app)
+        .get("/api/itens")
+        .set("Authorization", AUTH_HEADER);
 
       expect(Log.create).toHaveBeenCalledWith({
         rota: "/api/itens",
@@ -388,7 +563,9 @@ describe("API web2-trabalho-1", () => {
         },
       ]);
 
-      const resposta = await request(app).get("/api/itens/exportar");
+      const resposta = await request(app)
+        .get("/api/itens/exportar")
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(200);
       expect(resposta.headers["content-type"]).toContain("text/csv");
@@ -417,7 +594,9 @@ describe("API web2-trabalho-1", () => {
         },
       ]);
 
-      const resposta = await request(app).get("/api/itens/exportar");
+      const resposta = await request(app)
+        .get("/api/itens/exportar")
+        .set("Authorization", AUTH_HEADER);
       const csv = resposta.text.replace(/^\uFEFF/, "");
 
       expect(csv).toContain(`"'=1+1; ""aspas"""`);
@@ -434,7 +613,9 @@ describe("API web2-trabalho-1", () => {
         },
       ]);
 
-      const resposta = await request(app).get("/api/itens/exportar");
+      const resposta = await request(app)
+        .get("/api/itens/exportar")
+        .set("Authorization", AUTH_HEADER);
       const csv = resposta.text.replace(/^\uFEFF/, "");
 
       expect(csv).toContain('"id-do-mongo","bolo mole"');
@@ -445,6 +626,7 @@ describe("API web2-trabalho-1", () => {
     test("permite a mesma origem", async () => {
       const resposta = await request(app)
         .get("/api/itens")
+        .set("Authorization", AUTH_HEADER)
         .set("Host", "exemplo.vercel.app")
         .set("X-Forwarded-Proto", "https")
         .set("Origin", "https://exemplo.vercel.app");
@@ -459,6 +641,7 @@ describe("API web2-trabalho-1", () => {
     test("bloqueia origem diferente", async () => {
       const resposta = await request(app)
         .get("/api/itens")
+        .set("Authorization", AUTH_HEADER)
         .set("Host", "exemplo.vercel.app")
         .set("X-Forwarded-Proto", "https")
         .set("Origin", "https://outro.vercel.app");
@@ -482,7 +665,9 @@ describe("API web2-trabalho-1", () => {
     });
 
     test("permite chamadas sem o cabeçalho Origin", async () => {
-      const resposta = await request(app).get("/api/itens");
+      const resposta = await request(app)
+        .get("/api/itens")
+        .set("Authorization", AUTH_HEADER);
 
       expect(resposta.status).toBe(200);
       expect(resposta.headers["access-control-allow-origin"]).toBeUndefined();
@@ -491,6 +676,7 @@ describe("API web2-trabalho-1", () => {
     test("bloqueia origem inválida ou opaca", async () => {
       const resposta = await request(app)
         .get("/api/itens")
+        .set("Authorization", AUTH_HEADER)
         .set("Host", "localhost:3000")
         .set("Origin", "null");
 

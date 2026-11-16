@@ -5,6 +5,7 @@ const itensRoutes = require("./routes/itensRoutes");
 const pdfRoutes = require("./routes/pdfRoutes");
 const logsRoutes = require("./routes/requisicaoGet");
 const authRoutes = require("./routes/authRoutes");
+const autenticar = require("./middlewares/autenticar");
 const { connectDB } = require("./config/db");
 
 const paginaExportar = fs.readFileSync(
@@ -40,7 +41,7 @@ app.use((req, res, next) => {
 
   res.setHeader("Access-Control-Allow-Origin", origem);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(204);
@@ -55,8 +56,6 @@ app.get("/exportar", (_, res) => {
   res.type("html").send(paginaExportar);
 });
 
-// Garante a conexão com o MongoDB antes de qualquer rota /api. Em serverless a
-// conexão é reaproveitada pelo cache global em config/db.js.
 const garantirConexao = async (req, res, next) => {
   try {
     await connectDB();
@@ -71,9 +70,9 @@ app.get("/", (_, res) => {
 });
 
 app.use("/api", garantirConexao);
-app.use("/api/itens", itensRoutes);
-app.use("/api/pdf", pdfRoutes);
-app.use("/api/logs", logsRoutes);
+app.use("/api/itens", autenticar, itensRoutes);
+app.use("/api/pdf", autenticar, pdfRoutes);
+app.use("/api/logs", autenticar, logsRoutes);
 app.use("/api/auth", authRoutes);
 
 app.use((req, res) => {

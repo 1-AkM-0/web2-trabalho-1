@@ -7,6 +7,7 @@ const usuarioSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+      maxlength: 100,
     },
     email: {
       type: String,
@@ -14,18 +15,25 @@ const usuarioSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
+      maxlength: 254,
     },
     senha: {
       type: String,
       required: true,
+      select: false,
     },
     codigo2FA: {
       type: String,
       default: null,
+      select: false,
     },
     expiracaoCodigo2FA: {
       type: Date,
       default: null,
+    },
+    tentativasCodigo2FA: {
+      type: Number,
+      default: 0,
     },
   },
   {
@@ -33,7 +41,6 @@ const usuarioSchema = new mongoose.Schema(
   }
 );
 
-// Letra E: Criptografa a senha automaticamente antes de salvar no banco
 usuarioSchema.pre("save", async function () {
   if (!this.isModified("senha")) return;
   const salt = await bcrypt.genSalt(10);
