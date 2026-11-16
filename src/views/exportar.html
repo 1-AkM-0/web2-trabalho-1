@@ -31,6 +31,23 @@
       h1 { margin-top: 0; }
       p { color: #5f6368; line-height: 1.5; }
 
+      .campo {
+        display: flex;
+        flex-direction: column;
+        text-align: left;
+        margin: 16px 0 8px;
+        gap: 6px;
+      }
+
+      label { font-size: 0.875rem; font-weight: 700; color: #3c4043; }
+
+      input {
+        padding: 10px 12px;
+        border: 1px solid #dadce0;
+        border-radius: 6px;
+        font-size: 0.95rem;
+      }
+
       button {
         margin-top: 12px;
         padding: 12px 24px;
@@ -41,21 +58,84 @@
         font-size: 1rem;
         font-weight: 700;
         cursor: pointer;
+        width: 100%;
       }
 
       button:hover { background: #0d4f86; }
-      button:focus-visible { outline: 3px solid #8ab4f8; outline-offset: 3px; }
+      button:disabled { background: #9aa0a6; cursor: not-allowed; }
+      #status { margin-top: 12px; font-size: 0.9rem; min-height: 1.25em; }
+      .erro { color: #c5221f; }
+      .sucesso { color: #137333; }
     </style>
   </head>
   <body>
     <main>
       <h1>Exportar dados</h1>
       <p>Baixe os itens cadastrados no banco de dados em uma planilha CSV.</p>
+      <div class="campo">
+        <label for="token">Token de acesso (Bearer)</label>
+        <input id="token" type="password" placeholder="Cole aqui o token obtido no 2FA" autocomplete="off" />
+      </div>
       <button id="exportar" type="button">Exportar</button>
+      <p id="status" role="status" aria-live="polite"></p>
     </main>
     <script>
-      document.getElementById("exportar").addEventListener("click", () => {
-        window.location.assign("/api/itens/exportar");
+      const inputToken = document.getElementById("token");
+      const botaoExportar = document.getElementById("exportar");
+      const statusEl = document.getElementById("status");
+
+      const tokenSalvo = localStorage.getItem("token");
+      if (tokenSalvo) inputToken.value = tokenSalvo;
+
+      botaoExportar.addEventListener("click", async () => {
+        const token = inputToken.value.trim();
+        statusEl.textContent = "";
+        statusEl.className = "";
+
+        if (!token) {
+          statusEl.textContent = "Informe o token de autenticação antes de exportar.";
+          statusEl.className = "erro";
+          inputToken.focus();
+          return;
+        }
+
+        botaoExportar.disabled = true;
+        botaoExportar.textContent = "Exportando...";
+
+        try {
+          const resposta = await fetch("/api/itens/exportar", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (!resposta.ok) {
+            let mensagem = "Não foi possível exportar o CSV.";
+            try {
+              const dados = await resposta.json();
+              if (dados && dados.mensagem) mensagem = dados.mensagem;
+            } catch {}
+            throw new Error(mensagem);
+          }
+
+          localStorage.setItem("token", token);
+          const blob = await resposta.blob();
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "itens.csv";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+
+          statusEl.textContent = "Download iniciado com sucesso!";
+          statusEl.className = "sucesso";
+        } catch (erro) {
+          statusEl.textContent = erro.message;
+          statusEl.className = "erro";
+        } finally {
+          botaoExportar.disabled = false;
+          botaoExportar.textContent = "Exportar";
+        }
       });
     </script>
   </body>
