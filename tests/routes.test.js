@@ -33,6 +33,7 @@ jest.mock("nodemailer", () => ({
 }));
 
 const bcrypt = require("bcryptjs");
+const crypto = require("node:crypto");
 const request = require("supertest");
 const app = require("../src/app");
 const Item = require("../src/models/Item");
@@ -45,6 +46,21 @@ const { connectDB } = require("../src/config/db");
 const ID_VALIDO = "507f1f77bcf86cd799439011";
 const ID_INVALIDO = "id-invalido";
 const AUTH_HEADER = `Bearer ${gerarToken(ID_VALIDO)}`;
+
+const criarTokenExpirado = () => {
+  const cabecalho = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+  const agora = Math.floor(Date.now() / 1000);
+  const payload = Buffer.from(
+    JSON.stringify({ sub: ID_VALIDO, iat: agora - 7200, exp: agora - 3600 })
+  ).toString("base64url");
+  const dados = `${cabecalho}.${payload}`;
+  const assinatura = crypto
+    .createHmac("sha256", process.env.JWT_SECRET)
+    .update(dados)
+    .digest("base64url");
+
+  return `${dados}.${assinatura}`;
+};
 
 describe("API web2-trabalho-1", () => {
   beforeEach(() => {
@@ -181,6 +197,173 @@ describe("API web2-trabalho-1", () => {
 
       expect(resposta.status).toBe(401);
       expect(resposta.body.mensagem).toBe("Autenticação necessária.");
+    });
+
+    test("POST /api/auth/registrar rejeita email duplicado", async () => {
+      Usuario.findOne.mockResolvedValue({ _id: ID_VALIDO });
+
+      const resposta = await request(app)
+        .post("/api/auth/registrar")
+        .send({ nome: "Ana", email: "ana@example.com", senha: "Senha123" });
+
+      expect(resposta.status).toBe(409);
+      expect(Usuario.create).not.toHaveBeenCalled();
+    });
+
+    test("POST /api/auth/registrar rejeita email inválido", async () => {
+      const resposta = await request(app)
+        .post("/api/auth/registrar")
+        .send({ nome: "Ana", email: "ana-sem-arroba", senha: "Senha123" });
+
+      expect(resposta.status).toBe(400);
+      expect(Usuario.create).not.toHaveBeenCalled();
+    });
+
+    test("POST /api/auth/login rejeita senha incorreta", async () => {
+      const senhaHash = await bcrypt.hash("Senha123", 4);
+      Usuario.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue({
+          email: "ana@example.com",
+          senha: senhaHash,
+        }),
+      });
+
+      const resposta = await request(app)
+        .post("/api/auth/login")
+        .send({ email: "ana@example.com", senha: "Errada123" });
+
+      expect(resposta.status).toBe(401);
+      expect(mockSendMail).not.toHaveBeenCalled();
+    });
+
+    test("POST /api/auth/login limpa o código quando o envio falha", async () => {
+      const senhaHash = await bcrypt.hash("Senha123", 4);
+      const usuarioMock = {
+        email: "ana@example.com",
+        senha: senhaHash,
+        codigo2FA: null,
+        expiracaoCodigo2FA: null,
+        tentativasCodigo2FA: 0,
+        save: jest.fn().mockResolvedValue(),
+      };
+      Usuario.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue(usuarioMock),
+      });
+      mockSendMail.mockRejectedValueOnce(new Error("falha no SMTP"));
+
+      const resposta = await request(app)
+        .post("/api/auth/login")
+        .send({ email: "ana@example.com", senha: "Senha123" });
+
+      expect(resposta.status).toBe(503);
+      expect(usuarioMock.codigo2FA).toBeNull();
+      expect(usuarioMock.expiracaoCodigo2FA).toBeNull();
+      expect(usuarioMock.save).toHaveBeenCalledTimes(2);
+    });
+
+    test("POST /api/auth/verificar-2fa rejeita código incorreto e conta a tentativa", async () => {
+      const usuarioMock = {
+        codigo2FA: await bcrypt.hash("123456", 4),
+        expiracaoCodigo2FA: new Date(Date.now() + 5 * 60 * 1000),
+        tentativasCodigo2FA: 0,
+        save: jest.fn().mockResolvedValue(),
+      };
+      Usuario.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue(usuarioMock),
+      });
+
+      const resposta = await request(app)
+        .post("/api/auth/verificar-2fa")
+        .send({ email: "ana@example.com", codigo: "000000" });
+
+      expect(resposta.status).toBe(401);
+      expect(usuarioMock.tentativasCodigo2FA).toBe(1);
+      expect(usuarioMock.codigo2FA).not.toBeNull();
+      expect(usuarioMock.save).toHaveBeenCalledTimes(1);
+    });
+
+    test("POST /api/auth/verificar-2fa rejeita e limpa código expirado", async () => {
+      const usuarioMock = {
+        codigo2FA: await bcrypt.hash("123456", 4),
+        expiracaoCodigo2FA: new Date(Date.now() - 1000),
+        tentativasCodigo2FA: 0,
+        save: jest.fn().mockResolvedValue(),
+      };
+      Usuario.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue(usuarioMock),
+      });
+
+      const resposta = await request(app)
+        .post("/api/auth/verificar-2fa")
+        .send({ email: "ana@example.com", codigo: "123456" });
+
+      expect(resposta.status).toBe(400);
+      expect(usuarioMock.codigo2FA).toBeNull();
+      expect(usuarioMock.expiracaoCodigo2FA).toBeNull();
+      expect(usuarioMock.save).toHaveBeenCalledTimes(1);
+    });
+
+    test("POST /api/auth/verificar-2fa bloqueia após cinco tentativas", async () => {
+      const usuarioMock = {
+        codigo2FA: await bcrypt.hash("123456", 4),
+        expiracaoCodigo2FA: new Date(Date.now() + 5 * 60 * 1000),
+        tentativasCodigo2FA: 4,
+        save: jest.fn().mockResolvedValue(),
+      };
+      Usuario.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue(usuarioMock),
+      });
+
+      const resposta = await request(app)
+        .post("/api/auth/verificar-2fa")
+        .send({ email: "ana@example.com", codigo: "000000" });
+
+      expect(resposta.status).toBe(429);
+      expect(usuarioMock.codigo2FA).toBeNull();
+      expect(usuarioMock.expiracaoCodigo2FA).toBeNull();
+      expect(usuarioMock.save).toHaveBeenCalledTimes(1);
+    });
+
+    test("POST /api/auth/verificar-2fa retorna 503 sem JWT_SECRET", async () => {
+      const usuarioMock = {
+        _id: ID_VALIDO,
+        nome: "Ana",
+        email: "ana@example.com",
+        codigo2FA: await bcrypt.hash("123456", 4),
+        expiracaoCodigo2FA: new Date(Date.now() + 5 * 60 * 1000),
+        tentativasCodigo2FA: 0,
+        save: jest.fn().mockResolvedValue(),
+      };
+      Usuario.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue(usuarioMock),
+      });
+      delete process.env.JWT_SECRET;
+
+      const resposta = await request(app)
+        .post("/api/auth/verificar-2fa")
+        .send({ email: "ana@example.com", codigo: "123456" });
+
+      expect(resposta.status).toBe(503);
+      expect(resposta.body.token).toBeUndefined();
+    });
+
+    test("rotas protegidas rejeitam token adulterado", async () => {
+      const token = gerarToken(ID_VALIDO);
+      const adulterado = `${token.slice(0, -1)}${token.endsWith("A") ? "B" : "A"}`;
+
+      const resposta = await request(app)
+        .get("/api/itens")
+        .set("Authorization", `Bearer ${adulterado}`);
+
+      expect(resposta.status).toBe(401);
+    });
+
+    test("rotas protegidas rejeitam token expirado", async () => {
+      const resposta = await request(app)
+        .get("/api/itens")
+        .set("Authorization", `Bearer ${criarTokenExpirado()}`);
+
+      expect(resposta.status).toBe(401);
     });
   });
 
