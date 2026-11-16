@@ -18,26 +18,64 @@ jest.mock("../src/models/Log", () => ({
   create: jest.fn(),
 }));
 
+const mockSendMail = jest.fn();
+
+jest.mock("nodemailer", () => ({
+  createTransport: jest.fn(() => ({ sendMail: mockSendMail })),
+}));
+
+jest.mock("../src/models/Usuario", () => ({
+  findOne: jest.fn(),
+  create: jest.fn(),
+}));
+
+const bcrypt = require("bcryptjs");
 const request = require("supertest");
 const app = require("../src/app");
 const Item = require("../src/models/Item");
 const Log = require("../src/models/Log");
+const Usuario = require("../src/models/Usuario");
 const { enviarImagem, excluirImagem } = require("../src/config/cloudinary");
 const { connectDB } = require("../src/config/db");
 
 const ID_VALIDO = "507f1f77bcf86cd799439011";
 const ID_INVALIDO = "id-invalido";
+const EMAIL_USER_ORIGINAL = process.env.EMAIL_USER;
+const EMAIL_PASS_ORIGINAL = process.env.EMAIL_PASS;
+
+afterAll(() => {
+  if (EMAIL_USER_ORIGINAL === undefined) {
+    delete process.env.EMAIL_USER;
+  } else {
+    process.env.EMAIL_USER = EMAIL_USER_ORIGINAL;
+  }
+
+  if (EMAIL_PASS_ORIGINAL === undefined) {
+    delete process.env.EMAIL_PASS;
+  } else {
+    process.env.EMAIL_PASS = EMAIL_PASS_ORIGINAL;
+  }
+});
 
 describe("API web2-trabalho-1", () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
+    process.env.EMAIL_USER = "teste@example.com";
+    process.env.EMAIL_PASS = "senha-de-app";
     connectDB.mockResolvedValue({});
     Item.find.mockResolvedValue([]);
     Item.create.mockResolvedValue({ id: "novo-id", nome: "coxinha" });
     Item.findById.mockResolvedValue(null);
     Log.find.mockResolvedValue([]);
     Log.create.mockResolvedValue({});
+    Usuario.findOne.mockResolvedValue(null);
+    Usuario.create.mockResolvedValue({
+      _id: "usuario-id",
+      nome: "Teste",
+      email: "teste@example.com",
+    });
+    mockSendMail.mockResolvedValue({});
     enviarImagem.mockResolvedValue({
       url: "https://res.cloudinary.com/demo/image/upload/coxinha.png",
       publicId: "web2-trabalho-1/coxinha",
@@ -496,6 +534,199 @@ describe("API web2-trabalho-1", () => {
 
       expect(resposta.status).toBe(403);
       expect(resposta.body.mensagem).toBe("Origem não permitida.");
+    });
+  });
+
+  describe("Rotas de autenticação", () => {
+    describe("POST /api/auth/registrar", () => {
+      test("cadastra um usuário", async () => {
+        const resposta = await request(app).post("/api/auth/registrar").send({
+          nome: "Teste",
+          email: "teste@example.com",
+          senha: "senha123",
+        });
+
+        expect(resposta.status).toBe(201);
+        expect(resposta.body.mensagem).toBe("Usuário cadastrado com sucesso!");
+        expect(resposta.body.usuario).toEqual({
+          id: "usuario-id",
+          nome: "Teste",
+          email: "teste@example.com",
+        });
+        expect(Usuario.findOne).toHaveBeenCalledWith({ email: "teste@example.com" });
+        expect(Usuario.create).toHaveBeenCalledWith({
+          nome: "Teste",
+          email: "teste@example.com",
+          senha: "senha123",
+        });
+      });
+
+      test("exige nome, email e senha", async () => {
+        const resposta = await request(app)
+          .post("/api/auth/registrar")
+          .send({ nome: "Teste" });
+
+        expect(resposta.status).toBe(400);
+        expect(resposta.body.mensagem).toBe("Nome, email e senha são obrigatórios.");
+        expect(Usuario.create).not.toHaveBeenCalled();
+      });
+
+      test("rejeita email já cadastrado", async () => {
+        Usuario.findOne.mockResolvedValue({ _id: "existente" });
+
+        const resposta = await request(app).post("/api/auth/registrar").send({
+          nome: "Teste",
+          email: "teste@example.com",
+          senha: "senha123",
+        });
+
+        expect(resposta.status).toBe(400);
+        expect(resposta.body.mensagem).toBe("Este email já está cadastrado.");
+        expect(Usuario.create).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("POST /api/auth/login", () => {
+      test("exige email e senha", async () => {
+        const resposta = await request(app)
+          .post("/api/auth/login")
+          .send({ email: "teste@example.com" });
+
+        expect(resposta.status).toBe(400);
+        expect(resposta.body.mensagem).toBe("Email e senha são obrigatórios.");
+      });
+
+      test("rejeita usuário inexistente", async () => {
+        const resposta = await request(app).post("/api/auth/login").send({
+          email: "teste@example.com",
+          senha: "senha123",
+        });
+
+        expect(resposta.status).toBe(401);
+        expect(resposta.body.mensagem).toBe("Credenciais inválidas.");
+      });
+
+      test("rejeita senha incorreta", async () => {
+        const senhaHash = await bcrypt.hash("senha123", 4);
+        Usuario.findOne.mockResolvedValue({
+          email: "teste@example.com",
+          senha: senhaHash,
+        });
+
+        const resposta = await request(app).post("/api/auth/login").send({
+          email: "teste@example.com",
+          senha: "senha-errada",
+        });
+
+        expect(resposta.status).toBe(401);
+        expect(resposta.body.mensagem).toBe("Credenciais inválidas.");
+        expect(mockSendMail).not.toHaveBeenCalled();
+      });
+
+      test("envia código 2FA por email após senha correta", async () => {
+        const senhaHash = await bcrypt.hash("senha123", 4);
+        const usuario = {
+          email: "teste@example.com",
+          senha: senhaHash,
+          save: jest.fn().mockResolvedValue(),
+        };
+        Usuario.findOne.mockResolvedValue(usuario);
+
+        const resposta = await request(app).post("/api/auth/login").send({
+          email: "teste@example.com",
+          senha: "senha123",
+        });
+
+        expect(resposta.status).toBe(200);
+        expect(resposta.body.mensagem).toBe("Código de verificação enviado para o seu email.");
+        expect(usuario.codigo2FA).toMatch(/^\d{6}$/);
+        expect(usuario.expiracaoCodigo2FA).toBeInstanceOf(Date);
+        expect(usuario.save).toHaveBeenCalledTimes(1);
+        expect(mockSendMail).toHaveBeenCalledTimes(1);
+        expect(mockSendMail.mock.calls[0][0].to).toBe("teste@example.com");
+        expect(mockSendMail.mock.calls[0][0].text).toContain(usuario.codigo2FA);
+      });
+    });
+
+    describe("POST /api/auth/verificar-2fa", () => {
+      test("exige email e código", async () => {
+        const resposta = await request(app)
+          .post("/api/auth/verificar-2fa")
+          .send({ email: "teste@example.com" });
+
+        expect(resposta.status).toBe(400);
+        expect(resposta.body.mensagem).toBe("Email e código são obrigatórios.");
+      });
+
+      test("rejeita solicitação sem código pendente", async () => {
+        const resposta = await request(app).post("/api/auth/verificar-2fa").send({
+          email: "teste@example.com",
+          codigo: "123456",
+        });
+
+        expect(resposta.status).toBe(400);
+        expect(resposta.body.mensagem).toBe("Solicitação de código inválida.");
+      });
+
+      test("rejeita código expirado", async () => {
+        Usuario.findOne.mockResolvedValue({
+          codigo2FA: "123456",
+          expiracaoCodigo2FA: new Date(Date.now() - 1000),
+          save: jest.fn(),
+        });
+
+        const resposta = await request(app).post("/api/auth/verificar-2fa").send({
+          email: "teste@example.com",
+          codigo: "123456",
+        });
+
+        expect(resposta.status).toBe(400);
+        expect(resposta.body.mensagem).toBe("Código expirado. Faça login novamente.");
+      });
+
+      test("rejeita código incorreto", async () => {
+        Usuario.findOne.mockResolvedValue({
+          codigo2FA: "123456",
+          expiracaoCodigo2FA: new Date(Date.now() + 60000),
+          save: jest.fn(),
+        });
+
+        const resposta = await request(app).post("/api/auth/verificar-2fa").send({
+          email: "teste@example.com",
+          codigo: "000000",
+        });
+
+        expect(resposta.status).toBe(401);
+        expect(resposta.body.mensagem).toBe("Código incorreto.");
+      });
+
+      test("confirma o código e limpa os dados temporários", async () => {
+        const usuario = {
+          _id: "usuario-id",
+          nome: "Teste",
+          email: "teste@example.com",
+          codigo2FA: "123456",
+          expiracaoCodigo2FA: new Date(Date.now() + 60000),
+          save: jest.fn().mockResolvedValue(),
+        };
+        Usuario.findOne.mockResolvedValue(usuario);
+
+        const resposta = await request(app).post("/api/auth/verificar-2fa").send({
+          email: "teste@example.com",
+          codigo: "123456",
+        });
+
+        expect(resposta.status).toBe(200);
+        expect(resposta.body.mensagem).toBe("Autenticação 2FA concluída com sucesso!");
+        expect(resposta.body.usuario).toEqual({
+          id: "usuario-id",
+          nome: "Teste",
+          email: "teste@example.com",
+        });
+        expect(usuario.codigo2FA).toBeNull();
+        expect(usuario.expiracaoCodigo2FA).toBeNull();
+        expect(usuario.save).toHaveBeenCalledTimes(1);
+      });
     });
   });
 
