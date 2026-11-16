@@ -198,7 +198,9 @@ de credenciais nem de um banco real.
 | Método | Rota | Descrição |
 | --- | --- | --- |
 | GET | `/` | Status da API |
+| GET | `/exportar` | Página com o botão para baixar o CSV |
 | GET | `/api/itens` | Lista os itens |
+| GET | `/api/itens/exportar` | Baixa os itens do banco em CSV |
 | POST | `/api/itens` | Cria um item (`{ "nome": "..." }`) |
 | GET | `/api/itens/:id` | Busca um item por ID |
 | DELETE | `/api/itens/:id` | Exclui um item e sua imagem |
@@ -206,6 +208,18 @@ de credenciais nem de um banco real.
 | DELETE | `/api/itens/:id/imagem` | Remove a imagem do item |
 | GET | `/api/pdf` | Baixa a lista de itens em PDF |
 | GET | `/api/logs?data=YYYY-MM-DD` | Lista os logs de requisição da data |
+
+### Itens F e H — CORS e exportação CSV
+
+O CORS aceita uma origem de navegador somente quando ela corresponde ao
+protocolo e host usados para acessar esta própria aplicação. Uma origem diferente
+recebe `403 Origem não permitida`. Chamadas sem o cabeçalho `Origin` (por
+exemplo, `curl` e integrações servidor a servidor) continuam disponíveis.
+
+Abra `http://localhost:3000/exportar` (ou o domínio do deploy seguido de
+`/exportar`) e clique em **Exportar**. O navegador baixa `itens.csv`, com os
+campos `id`, `nome`, `imagemUrl`, `criadoEm` e `atualizadoEm`. A mesma exportação
+pode ser acessada diretamente por `GET /api/itens/exportar`.
 
 ## Estrutura
 
@@ -216,9 +230,10 @@ src/server.js             execução local
 src/config/db.js          conexão com o MongoDB Atlas (com cache)
 src/config/cloudinary.js  upload/remoção de imagens
 src/models/               schemas Item e Log
-src/controllers/          regras de negócio
+src/controllers/          regras de negócio e exportação CSV
 src/routes/               rotas da API
 src/middlewares/          logs, horário e upload
+src/views/exportar.html   página com o botão Exportar
 tests/routes.test.js      testes de todas as rotas
 scripts/seed.js           popula o banco com os itens iniciais
 ```

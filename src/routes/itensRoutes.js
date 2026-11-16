@@ -1,11 +1,13 @@
 const { Router } = require("express");
 const ItensController = require("../controllers/itensController");
+const CsvController = require("../controllers/csvController");
 const { pathExtractor } = require("../middlewares/logs");
 const { horario } = require("../middlewares/rotaHorario");
 const { upload } = require("../middlewares/upload");
 
 const itensRouter = Router();
 
+itensRouter.get("/exportar", horario, pathExtractor, CsvController.exportarItens);
 itensRouter.get("/", horario, pathExtractor, ItensController.getItens);
 itensRouter.post("/", horario, pathExtractor, ItensController.inserirItem);
 itensRouter.get("/:id", horario, pathExtractor, ItensController.pesquisarPorCodigo);
