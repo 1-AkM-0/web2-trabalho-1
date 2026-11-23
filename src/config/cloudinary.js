@@ -7,7 +7,7 @@ function configurarCloudinary() {
 
   if (!cloudName || !apiKey || !apiSecret) {
     throw new Error(
-      "Credenciais do Cloudinary não configuradas. Defina CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET."
+      "Credenciais do Cloudinary não configuradas. Defina CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET.",
     );
   }
 
@@ -21,14 +21,10 @@ function configurarCloudinary() {
   return cloudinary;
 }
 
-/**
- * Envia um buffer de imagem para o Cloudinary.
- * O multer mantém o arquivo em memória (memoryStorage), o que funciona no
- * ambiente serverless da Vercel, onde não podemos gravar no disco.
- */
 function enviarImagem(buffer, opcoes = {}) {
   const cloud = configurarCloudinary();
-  const folder = opcoes.folder || process.env.CLOUDINARY_FOLDER || "web2-trabalho-1";
+  const folder =
+    opcoes.folder || process.env.CLOUDINARY_FOLDER || "web2-trabalho-1";
 
   return new Promise((resolve, reject) => {
     const uploadStream = cloud.uploader.upload_stream(
@@ -42,7 +38,7 @@ function enviarImagem(buffer, opcoes = {}) {
           url: resultado.secure_url,
           publicId: resultado.public_id,
         });
-      }
+      },
     );
 
     uploadStream.end(buffer);

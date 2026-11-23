@@ -1,6 +1,6 @@
 const multer = require("multer");
 
-const TAMANHO_MAXIMO = 4 * 1024 * 1024; // 4 MB (limite do body da Vercel é ~4,5 MB)
+const TAMANHO_MAXIMO = 4 * 1024 * 1024;
 
 const upload = multer({
   storage: multer.memoryStorage(),

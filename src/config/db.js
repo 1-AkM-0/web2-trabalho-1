@@ -1,8 +1,5 @@
 const mongoose = require("mongoose");
 
-// Na Vercel cada requisição pode cair em uma instância diferente. Guardamos a
-// conexão (e a promise em andamento) no escopo global para reaproveitá-la entre
-// invocações e evitar abrir várias conexões com o Atlas.
 const globalCache = globalThis.__mongooseCache || {
   conn: null,
   promise: null,
@@ -15,22 +12,20 @@ async function connectDB() {
 
   if (!uri) {
     throw new Error(
-      "MONGODB_URI não configurada. Defina a variável de ambiente com a string de conexão do MongoDB Atlas."
+      "MONGODB_URI não configurada. Defina a variável de ambiente com a string de conexão do MongoDB Atlas.",
     );
   }
 
-  // Se a URI não informar o banco, usa MONGODB_DB ou o padrão do projeto.
-  // Assim evitamos cair no banco "test" do MongoDB.
   let dbName = process.env.MONGODB_DB || "web2-trabalho-1";
 
   try {
-    const nomeNaUri = decodeURIComponent(new URL(uri).pathname.replace(/^\//, ""));
+    const nomeNaUri = decodeURIComponent(
+      new URL(uri).pathname.replace(/^\//, ""),
+    );
     if (nomeNaUri) {
       dbName = nomeNaUri;
     }
-  } catch {
-    // URI em formato inesperado: mantém o banco padrão.
-  }
+  } catch {}
 
   if (globalCache.conn) {
     return globalCache.conn;

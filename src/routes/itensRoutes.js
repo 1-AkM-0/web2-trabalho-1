@@ -7,25 +7,34 @@ const { upload } = require("../middlewares/upload");
 
 const itensRouter = Router();
 
-itensRouter.get("/exportar", horario, pathExtractor, CsvController.exportarItens);
+itensRouter.get(
+  "/exportar",
+  horario,
+  pathExtractor,
+  CsvController.exportarItens,
+);
 itensRouter.get("/", horario, pathExtractor, ItensController.getItens);
 itensRouter.post("/", horario, pathExtractor, ItensController.inserirItem);
-itensRouter.get("/:id", horario, pathExtractor, ItensController.pesquisarPorCodigo);
+itensRouter.get(
+  "/:id",
+  horario,
+  pathExtractor,
+  ItensController.pesquisarPorCodigo,
+);
 itensRouter.delete("/:id", horario, pathExtractor, ItensController.excluirItem);
 
-// Item B: upload/remoção da imagem do item no Cloudinary.
 itensRouter.post(
   "/:id/imagem",
   horario,
   pathExtractor,
   upload.single("imagem"),
-  ItensController.enviarImagemItem
+  ItensController.enviarImagemItem,
 );
 itensRouter.delete(
   "/:id/imagem",
   horario,
   pathExtractor,
-  ItensController.excluirImagemItem
+  ItensController.excluirImagemItem,
 );
 
 module.exports = itensRouter;

@@ -76,7 +76,9 @@ class ItensController {
       const item = await Item.findById(id);
 
       if (!item) {
-        return res.status(404).json({ mensagem: "Item não encontrado para exclusão." });
+        return res
+          .status(404)
+          .json({ mensagem: "Item não encontrado para exclusão." });
       }
 
       if (item.imagemPublicId) {
@@ -113,7 +115,6 @@ class ItensController {
 
       const { url, publicId } = await enviarImagem(req.file.buffer);
 
-      // Só apaga a imagem antiga depois que a nova foi enviada com sucesso.
       if (item.imagemPublicId) {
         await excluirImagem(item.imagemPublicId);
       }
@@ -146,7 +147,9 @@ class ItensController {
       }
 
       if (!item.imagemPublicId) {
-        return res.status(404).json({ mensagem: "Este item não possui imagem." });
+        return res
+          .status(404)
+          .json({ mensagem: "Este item não possui imagem." });
       }
 
       await excluirImagem(item.imagemPublicId);
